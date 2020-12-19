@@ -1,0 +1,9 @@
+.vscode
+
+#build
+*.o
+*.mod
+*.ko
+*.order
+*.symvers
+*.cmd
