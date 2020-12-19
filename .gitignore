@@ -7,3 +7,5 @@
 *.order
 *.symvers
 *.cmd
+*.o.d
+*mod.c
