@@ -1,6 +1,6 @@
 #include <linux/module.h>
 #include <linux/init.h> 
-#include "ustar.h"
+#include "ustar_base.h"
 #include "super.h"
 
 struct dentry* ustar_mount(struct file_system_type *fs_type, int flags, char const *dev, void *data){
@@ -42,6 +42,6 @@ void __exit ustar_exit(void){
 module_init(ustar_init);
 module_exit(ustar_exit);
 
-MODULE_VERSION("0.0.1");
+MODULE_VERSION("0.0.2");
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Maciej Wroblewski");

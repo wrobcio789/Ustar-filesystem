@@ -11,20 +11,13 @@ int ustar_fill_super_block(struct super_block* superblock, void* data, int silen
     superblock->s_blocksize = USTAR_BLOCK_SIZE;
     superblock->s_op = &ustar_super_operations;
 
-    root = new_inode(superblock);
-    if(!root){
-        pr_err("root inode allocation failed\n");
-        return -ENOMEM;
-    }
-
-    root->i_ino = USTAR_ROOT_INODE_NUMBER;
-    root->i_sb = superblock;
-    root->i_atime = root->i_mtime = root->i_ctime = current_time(root);
-    inode_init_owner(root, NULL, S_IFDIR);
+    root = ustar_inode_get(superblock, USTAR_ROOT_INODE_NUMBER);
+    if(IS_ERR(root))
+        return PTR_ERR(root);
 
     superblock->s_root = d_make_root(root);
     if(!superblock->s_root){
-        pr_err("root directory could not be created\n");
+        pr_err("ustar root directory could not be created\n");
         return -ENOMEM;
     }
 
