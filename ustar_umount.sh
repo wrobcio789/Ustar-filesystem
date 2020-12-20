@@ -1,0 +1,2 @@
+umount ./testdir
+rmmod ustar

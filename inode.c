@@ -78,6 +78,11 @@ struct inode* ustar_inode_get(struct super_block* super_block, ino_t inode_numbe
 
     current_disk_inode = (struct ustar_disk_inode*)read_block->b_data;
     ustar_inode_fill(node, current_disk_inode);
+    if(S_ISDIR(node->i_mode)){
+        node->i_op = &simple_dir_inode_operations;
+        node->i_fop = &simple_dir_operations;
+    }
+
     brelse(read_block);
 
     pr_debug("ustar created inode:\n"
