@@ -11,3 +11,6 @@ image
 *.cmd
 *.o.d
 *mod.c
+
+#test
+*.tar

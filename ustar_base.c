@@ -2,7 +2,7 @@
 
 uint64_t oct2bin(char* string){
     uint64_t result = 0;
-    while(string){
+    while(*string != '\0' && *string != ' '){
         result *= 8;
         result += (*string) - '0';
         string++;

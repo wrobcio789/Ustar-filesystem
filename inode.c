@@ -15,6 +15,32 @@ void ustar_inode_fill(struct inode* node, struct ustar_disk_inode* disk_node){
     node->i_atime.tv_sec = node->i_ctime.tv_sec = node-> i_mtime.tv_sec = oct2bin(disk_node->mtime);
     i_uid_write(node, (uid_t)(oct2bin(disk_node->uid)));
     i_gid_write(node, (gid_t)(oct2bin(disk_node->gid)));
+
+    pr_debug("ustar filled inode using data:\n"
+            "name= %s,\n"
+            "uid= %s,\n"
+            "gid= %s,\n"
+            "size= %s,\n"
+            "mtime= %s,\n"
+            "chcecksum= %s,\n"
+            "typeflag= %c,\n"
+            "linkname= %s,\n"
+            "magic= %s,\n"
+            "version= %s,\n"
+            "uname= %s,\n"
+            "gname= %s,\n",
+        disk_node->name,
+        disk_node->uid,
+        disk_node->gid,
+        disk_node->size,
+        disk_node->mtime,
+        disk_node->checksum,
+        disk_node->typeflag,
+        disk_node->linkname,
+        disk_node->magic,
+        disk_node->version,
+        disk_node->uname,
+        disk_node->gname);
 }
 
 struct inode* ustar_inode_get(struct super_block* super_block, ino_t inode_number){
@@ -55,12 +81,12 @@ struct inode* ustar_inode_get(struct super_block* super_block, ino_t inode_numbe
     brelse(read_block);
 
     pr_debug("ustar created inode:\n"
-            "mode= %u\n,"
-            "size= %u\n,"
-            "blocks= %u\n,"
-            "mtime= %llu\n,"
-            "uid=%o\n,"
-            "gid=%o\n",
+            "mode= %u,\n"
+            "size= %u,\n"
+            "blocks= %u,\n"
+            "mtime= %llu,\n"
+            "uid=%u,\n"
+            "gid=%u\n",
             (unsigned int)node->i_mode,
             (unsigned int)node->i_size,
             (unsigned int)node->i_blocks,

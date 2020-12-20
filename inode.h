@@ -6,10 +6,8 @@
 #include <linux/buffer_head.h>
 #include "ustar_base.h"
 
-#define USTAR_MAX_NAME_LENGTH 100
-
 struct ustar_disk_inode{
-    char name[USTAR_MAX_NAME_LENGTH];
+    char name[100];
     char mode[8];
     char uid[8];
     char gid[8];
@@ -24,6 +22,7 @@ struct ustar_disk_inode{
     char gname[32];
     char devmajor[8];
     char devminor[8];
+    char prefix[155];
 };
 
 uint32_t ustar_calculate_size_in_blocks(loff_t size);
