@@ -104,3 +104,7 @@ read_error:
 
     return ERR_PTR(-EIO);
 }
+
+void ustar_destroy_inode(struct inode* node){
+    pr_debug("ustar inode nr %u destroyed", (unsigned int)node->i_ino);
+}

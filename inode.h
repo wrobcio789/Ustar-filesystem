@@ -30,4 +30,7 @@ uint32_t ustar_calculate_size_in_blocks(loff_t size);
 void ustar_inode_fill(struct inode* node, struct ustar_disk_inode* disk_node);
 
 struct inode* ustar_inode_get(struct super_block* super_block, ino_t inode_number);
+
+void ustar_destroy_inode(struct inode* node);
+
 #endif //INODE_H
