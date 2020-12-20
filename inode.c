@@ -86,13 +86,17 @@ struct inode* ustar_inode_get(struct super_block* super_block, ino_t inode_numbe
             "blocks= %u,\n"
             "mtime= %llu,\n"
             "uid=%u,\n"
-            "gid=%u\n",
+            "gid=%u,\n"
+            "is_file=%d,\n"
+            "is_directory=%d,\n",
             (unsigned int)node->i_mode,
             (unsigned int)node->i_size,
             (unsigned int)node->i_blocks,
             (unsigned long long)node->i_mtime.tv_sec,
             (unsigned int)i_uid_read(node),
-            (unsigned int)i_gid_read(node)
+            (unsigned int)i_gid_read(node),
+            S_ISREG(node->i_mode),
+            S_ISDIR(node->i_mode)
             );
 
     unlock_new_inode(node);
