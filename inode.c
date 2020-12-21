@@ -2,6 +2,12 @@
 
 static uint32_t ustar_type_to_posix_mode_type_bits[8] = {[0] = S_IFREG, [5] = S_IFDIR};
 
+struct file_operations ustar_dir_operations = {
+      .llseek = generic_file_llseek,
+      .read = generic_read_dir,
+      .iterate = ustar_iterate,
+};
+
 uint32_t ustar_calculate_size_in_blocks(loff_t size){
     return (size + USTAR_BLOCK_SIZE - 1)/USTAR_BLOCK_SIZE;
 }
@@ -11,7 +17,7 @@ void ustar_inode_fill(struct inode* node, struct ustar_disk_inode* disk_node){
 
     node->i_mode = mode_type_bits | oct2bin(disk_node->mode);
     node->i_size = oct2bin(disk_node->size);
-    node->i_blocks = ustar_calculate_size_in_blocks(node->i_size);
+    node->i_blocks = ustar_calculate_size_in_blocks(node->i_size) + 1;
     node->i_atime.tv_sec = node->i_ctime.tv_sec = node-> i_mtime.tv_sec = oct2bin(disk_node->mtime);
     i_uid_write(node, (uid_t)(oct2bin(disk_node->uid)));
     i_gid_write(node, (gid_t)(oct2bin(disk_node->gid)));
@@ -80,7 +86,7 @@ struct inode* ustar_inode_get(struct super_block* super_block, ino_t inode_numbe
     ustar_inode_fill(node, current_disk_inode);
     if(S_ISDIR(node->i_mode)){
         node->i_op = &simple_dir_inode_operations;
-        node->i_fop = &simple_dir_operations;
+        node->i_fop = &ustar_dir_operations;
     }
 
     brelse(read_block);
@@ -116,4 +122,9 @@ read_error:
 
 void ustar_destroy_inode(struct inode* node){
     pr_debug("ustar inode nr %u destroyed", (unsigned int)node->i_ino);
+}
+
+int ustar_iterate(struct file* fileptr, struct dir_context* dir_ctx){
+    pr_debug("ustar iterate through dir named %s\n", fileptr->f_path.dentry->d_name.name);
+    return 0;
 }

@@ -33,4 +33,8 @@ struct inode* ustar_inode_get(struct super_block* super_block, ino_t inode_numbe
 
 void ustar_destroy_inode(struct inode* node);
 
+//void ustar_create_inode(struct inode* node);
+
+int ustar_iterate(struct file* fileptr, struct dir_context* dir_ctx);
+
 #endif //INODE_H
