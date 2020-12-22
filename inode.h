@@ -4,6 +4,7 @@
 #include <linux/types.h>
 #include <linux/fs.h>
 #include <linux/buffer_head.h>
+#include <linux/string.h>
 #include "ustar_base.h"
 
 struct ustar_disk_inode{
@@ -25,16 +26,30 @@ struct ustar_disk_inode{
     char prefix[155];
 };
 
+struct ustar_inode_data{
+    loff_t block_number;
+};
+
 uint32_t ustar_calculate_size_in_blocks(loff_t size);
+
+//int ustar_copy_inode_name(char* dest, struct super_block* super_block, ino_t number);
 
 void ustar_inode_fill(struct inode* node, struct ustar_disk_inode* disk_node);
 
 struct inode* ustar_inode_get(struct super_block* super_block, ino_t inode_number);
 
+struct inode* ustar_inode_alloc(struct super_block* super_block);
+
 void ustar_destroy_inode(struct inode* node);
 
-//void ustar_create_inode(struct inode* node);
-
 int ustar_iterate(struct file* fileptr, struct dir_context* dir_ctx);
+
+struct dentry* ustar_lookup(struct inode* dir, struct dentry* dentry, unsigned flags);
+
+ino_t ustar_find_inode_number_in_dir(struct inode* dir, const char* name);
+
+ino_t ustar_inode_number_by_name(struct super_block* sb, const char* name);
+
+int ustar_direct_descendant_check(const char* ancestor, const char* descendant);
 
 #endif //INODE_H

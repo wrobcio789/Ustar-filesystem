@@ -2,10 +2,14 @@
 
 static uint32_t ustar_type_to_posix_mode_type_bits[8] = {[0] = S_IFREG, [5] = S_IFDIR};
 
-struct file_operations ustar_dir_operations = {
+static struct file_operations ustar_dir_operations = {
       .llseek = generic_file_llseek,
       .read = generic_read_dir,
-      .iterate = ustar_iterate,
+      //.iterate = ustar_iterate,
+};
+
+static struct inode_operations ustar_inode_operations = {
+    .lookup = ustar_lookup
 };
 
 uint32_t ustar_calculate_size_in_blocks(loff_t size){
@@ -50,8 +54,6 @@ void ustar_inode_fill(struct inode* node, struct ustar_disk_inode* disk_node){
 }
 
 struct inode* ustar_inode_get(struct super_block* super_block, ino_t inode_number){
-    uint32_t current_inode_number = 0;
-    uint32_t current_block_number = 0;
     struct buffer_head* read_block;
     struct ustar_disk_inode* current_disk_inode;
 
@@ -62,30 +64,16 @@ struct inode* ustar_inode_get(struct super_block* super_block, ino_t inode_numbe
     if((node->i_state & I_NEW) == 0)
         return node;
 
-    while(current_inode_number < inode_number){
-        read_block = sb_bread(super_block, current_block_number);
-        if(read_block == NULL){
-            pr_err("ustar cannot read block number %d\n", current_block_number);
-            goto read_error;
-        }
-
-        current_disk_inode = (struct ustar_disk_inode*)read_block->b_data;
-        current_block_number += 1 + ustar_calculate_size_in_blocks(oct2bin(current_disk_inode->size));
-        current_inode_number++;
-
-        brelse(read_block);
-    }
-
-    read_block = sb_bread(super_block, current_block_number);
+    read_block = sb_bread(super_block, inode_number); //inode_number == bloc_number
     if(read_block == NULL){
-        pr_err("ustar cannot read block number %d\n", current_block_number);
+        pr_err("ustar cannot read block number %lu\n", inode_number);
         goto read_error;
     }
 
     current_disk_inode = (struct ustar_disk_inode*)read_block->b_data;
     ustar_inode_fill(node, current_disk_inode);
     if(S_ISDIR(node->i_mode)){
-        node->i_op = &simple_dir_inode_operations;
+        node->i_op = &ustar_inode_operations;
         node->i_fop = &ustar_dir_operations;
     }
 
@@ -120,11 +108,179 @@ read_error:
     return ERR_PTR(-EIO);
 }
 
-void ustar_destroy_inode(struct inode* node){
-    pr_debug("ustar inode nr %u destroyed", (unsigned int)node->i_ino);
+struct inode* ustar_inode_alloc(struct super_block* super_block){
+    struct inode* inode;
+    void* data = kvmalloc(sizeof(struct inode) + sizeof(struct ustar_inode_data), GFP_KERNEL);
+    if(data == NULL){
+        pr_err("ustar could not allocate new inode\n");
+        return NULL;
+    }
+    inode = (struct inode*)data;
+    inode_init_once(inode);
+    inode->i_private = (struct ustar_inode_data*)(data + sizeof(struct inode));
+
+    pr_debug("ustar inode allocated");
+    return inode;
+}
+
+void ustar_destroy_inode(struct inode* inode){
+    kvfree(inode);
+    pr_debug("ustar inode nr %u destroyed", (unsigned int)inode->i_ino);
 }
 
 int ustar_iterate(struct file* fileptr, struct dir_context* dir_ctx){
-    pr_debug("ustar iterate through dir named %s\n", fileptr->f_path.dentry->d_name.name);
+    uint32_t current_block_number = 0;
+    uint32_t record_count = 0;
+    struct buffer_head* read_block;
+    struct ustar_disk_inode* current_disk_inode;
+    struct inode* inode;
+    struct super_block* sb;
+    char ancestor_filename[USTAR_FILENAME_LENGTH];
+
+    pr_debug("ustar iterate from pos %llu through dir named %s\n", dir_ctx->pos, fileptr->f_path.dentry->d_name.name);
+
+    inode = fileptr->f_inode;
+	sb = inode->i_sb;
+
+    read_block = sb_bread(sb, inode->i_ino);
+    current_disk_inode = (struct ustar_disk_inode*)(read_block->b_data);
+    strcpy(ancestor_filename, current_disk_inode->name);
+    brelse(read_block);
+
+    pr_debug("ustar iterating, ancestor filename: %s", ancestor_filename);
+
+    while((read_block = sb_bread(sb, current_block_number))){
+        pr_debug("ustar read block number %u", current_block_number);
+        current_disk_inode = (struct ustar_disk_inode*)read_block->b_data;
+        current_block_number += 1 + ustar_calculate_size_in_blocks(oct2bin(current_disk_inode->size));
+
+        if(ustar_direct_descendant_check(ancestor_filename, current_disk_inode->name)){
+            pr_debug("ustar iterating, found child inode with filename %s",current_disk_inode->name);
+
+            record_count++;
+            if(dir_emit(dir_ctx, current_disk_inode->name, strlen(current_disk_inode->name), current_block_number, DT_UNKNOWN) == 0){
+                brelse(read_block);
+                return record_count;
+            }
+        }
+        
+        brelse(read_block);
+    }
+
+
+    pr_debug("ustar iterating, found %d matching records", record_count);
+    return record_count;
+}
+
+/*int ustar_copy_inode_name(char* dest, struct super_block* super_block, ino_t number){
+    struct buffer_head* read_block;
+    struct ustar_disk_inode* disk_inode;
+
+    read_block = sb_bread(super_block, number);
+    if(read_block == NULL){
+        pr_err("ustar cannot read block number %lu\n", number);
+        return -1;
+    }
+
+    disk_inode = (struct ustar_disk_inode*)read_block->b_data;
+    strcpy(dest, disk_inode->name);
+    brelse(read_block);
     return 0;
+}*/
+
+int ustar_direct_descendant_check(const char* ancestor, const char* descendant){
+    while(*ancestor != '\0'){
+        if(*ancestor != *descendant)
+            return false;
+        ancestor++;
+        descendant++;
+    }
+
+    if(*descendant == '\0') //descendant == ancestor
+        return false;  
+
+    while(*descendant != '\0'){
+        if(*descendant == '/'){
+            if(*(descendant + 1) == '\0')   { //descendant is directory
+                return true;
+            }
+            else
+                return false; //descendant is not direct
+        } 
+        descendant++;
+    }
+    return true;
+}
+
+struct dentry* ustar_lookup(struct inode* dir, struct dentry* dentry, unsigned flags){
+    ino_t inode_number;
+    struct inode* inode;
+
+    if (dentry->d_name.len >= USTAR_FILENAME_LENGTH)
+		return ERR_PTR(-ENAMETOOLONG);
+
+    inode_number =  ustar_find_inode_number_in_dir(dir, dentry->d_name.name);
+    if(inode_number == (ino_t)-1)
+        return ERR_PTR(-EIO);
+
+    inode = ustar_inode_get(dir->i_sb, inode_number);
+	if (IS_ERR(inode)) {
+		pr_err("Cannot read inode %lu", inode_number);
+		return ERR_PTR(PTR_ERR(inode));
+	}
+	d_add(dentry, inode);   
+
+    return NULL;
+}
+
+ino_t ustar_find_inode_number_in_dir(struct inode* dir, const char* name){
+    struct super_block* sb = dir->i_sb;
+    char fullname[USTAR_FILENAME_LENGTH];
+    int fullname_index = 0, source_index = 0;
+    struct ustar_disk_inode* disk_dir;
+    struct buffer_head* read_block = sb_bread(sb, dir->i_ino);
+
+    if(read_block == NULL){
+        pr_err("ustar cannot read block nr. %lu. Inode not found.", dir->i_ino);
+        return (ino_t)-1;
+    }
+    disk_dir = (struct ustar_disk_inode*)(read_block->b_data);
+
+    while(disk_dir->name[source_index] != '\0' ){
+        fullname[fullname_index] = disk_dir->name[source_index];
+        fullname_index++;
+        source_index++;
+    }
+
+    source_index = 0;
+    while(name[source_index] != '\0' ){
+        fullname[fullname_index] = name[source_index];
+        fullname_index++;
+        source_index++;
+    }
+
+    brelse(read_block);
+    return ustar_inode_number_by_name(sb, fullname);    
+}
+
+ino_t ustar_inode_number_by_name(struct super_block* sb, const char* name){
+    loff_t current_block_number = 0;
+    struct ustar_disk_inode* current_disk_inode;
+    struct buffer_head* read_block;
+
+    while((read_block = sb_bread(sb, current_block_number))){
+        pr_debug("ustar read block number %llu", current_block_number);
+        current_disk_inode = (struct ustar_disk_inode*)read_block->b_data;
+
+        if(strcmp(current_disk_inode->name, name) == 0){
+            pr_debug("ustar found inode named %s in bloc nr %llu", name, current_block_number);
+            return current_block_number;
+        }
+        
+        current_block_number += 1 + ustar_calculate_size_in_blocks(oct2bin(current_disk_inode->size));
+        brelse(read_block);
+    }
+
+    pr_debug("ustar did not find inode named %s", name);
+    return (ino_t)-1;
 }
