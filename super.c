@@ -3,7 +3,7 @@
 static struct super_operations ustar_super_operations = {
     .put_super = ustar_put_super_block,
     .destroy_inode = ustar_destroy_inode,
-    .alloc_inode = ustar_inode_alloc,
+    //.alloc_inode = ustar_inode_alloc,
 };
 
 int ustar_fill_super_block(struct super_block* superblock, void* data, int silent){
