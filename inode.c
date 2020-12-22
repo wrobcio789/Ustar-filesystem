@@ -150,7 +150,7 @@ int ustar_iterate(struct file* fileptr, struct dir_context* dir_ctx){
     pr_debug("ustar iterating, ancestor filename: %s", ancestor_filename);
 
     while((read_block = sb_bread(sb, current_block_number))){
-        pr_debug("ustar read block number %u", current_block_number);
+        pr_debug("ustar iterating, read block number %u", current_block_number);
         current_disk_inode = (struct ustar_disk_inode*)read_block->b_data;
         current_block_number += 1 + ustar_calculate_size_in_blocks(oct2bin(current_disk_inode->size));
 
@@ -269,7 +269,7 @@ ino_t ustar_inode_number_by_name(struct super_block* sb, const char* name){
     struct buffer_head* read_block;
 
     while((read_block = sb_bread(sb, current_block_number))){
-        pr_debug("ustar read block number %llu", current_block_number);
+        pr_debug("ustar name searching, read block number %llu", current_block_number);
         current_disk_inode = (struct ustar_disk_inode*)read_block->b_data;
 
         if(strcmp(current_disk_inode->name, name) == 0){
