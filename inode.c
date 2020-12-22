@@ -9,9 +9,9 @@ static struct file_operations ustar_dir_operations = {
       //.iterate = ustar_iterate,
 };
 
-/*static struct inode_operations ustar_inode_operations = {
+static struct inode_operations ustar_dir_inode_operations = {
     .lookup = ustar_lookup
-};*/
+};
 
 uint32_t ustar_calculate_size_in_blocks(loff_t size){
     return (size + USTAR_BLOCK_SIZE - 1)/USTAR_BLOCK_SIZE;
@@ -203,20 +203,26 @@ struct dentry* ustar_lookup(struct inode* dir, struct dentry* dentry, unsigned f
     ino_t inode_number;
     struct inode* inode;
 
-    if (dentry->d_name.len >= USTAR_FILENAME_LENGTH)
+    pr_debug("ustar lookup dir nr %lu, for name %s", dir->i_ino, dentry->d_name.name);
+
+    if (dentry->d_name.len >= USTAR_FILENAME_LENGTH){
+        pr_debug("ustar cannot lookup entry %s, name too long", dentry->d_name.name);
 		return ERR_PTR(-ENAMETOOLONG);
+    }
 
     inode_number =  ustar_find_inode_number_in_dir(dir, dentry->d_name.name);
-    if(inode_number == (ino_t)-1)
+    if(inode_number == (ino_t)-1){
+        pr_debug("ustar cannot find inode number in dir nr %lu, named %s", dir->i_ino, dentry->d_name.name);
         return ERR_PTR(-EIO);
+    }
 
     inode = ustar_inode_get(dir->i_sb, inode_number);
 	if (IS_ERR(inode)) {
 		pr_err("Cannot read inode %lu", inode_number);
 		return ERR_PTR(PTR_ERR(inode));
 	}
-	d_add(dentry, inode);   
 
+	d_add(dentry, inode);   
     return NULL;
 }
 
