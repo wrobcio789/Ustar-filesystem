@@ -46,7 +46,7 @@ int ustar_iterate(struct file* fileptr, struct dir_context* dir_ctx);
 
 struct dentry* ustar_lookup(struct inode* dir, struct dentry* dentry, unsigned flags);
 
-ino_t ustar_find_inode_number_in_dir(struct inode* dir, const char* name);
+ino_t ustar_find_inode_number_in_dir(struct inode* dir, struct qstr* name);
 
 ino_t ustar_inode_number_by_name(struct super_block* sb, const char* name);
 

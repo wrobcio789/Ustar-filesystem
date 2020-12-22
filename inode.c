@@ -74,7 +74,7 @@ struct inode* ustar_inode_get(struct super_block* super_block, ino_t inode_numbe
     current_disk_inode = (struct ustar_disk_inode*)read_block->b_data;
     ustar_inode_fill(node, current_disk_inode);
     if(S_ISDIR(node->i_mode)){
-        node->i_op = &simple_dir_inode_operations;
+        node->i_op = &ustar_dir_inode_operations;
         node->i_fop = &ustar_dir_operations;
     }
 
@@ -176,6 +176,8 @@ int ustar_iterate(struct file* fileptr, struct dir_context* dir_ctx){
 }
 
 int ustar_direct_descendant_check(const char* ancestor, const char* descendant){
+    pr_debug("checking if %s is ancestor of %s", ancestor, descendant);
+
     while(*ancestor != '\0'){
         if(*ancestor != *descendant)
             return false;
@@ -203,16 +205,16 @@ struct dentry* ustar_lookup(struct inode* dir, struct dentry* dentry, unsigned f
     ino_t inode_number;
     struct inode* inode;
 
-    pr_debug("ustar lookup dir nr %lu, for name %s", dir->i_ino, dentry->d_name.name);
+    pr_debug("ustar lookup dir nr %lu, for name %*s", dir->i_ino, dentry->d_name.len, dentry->d_name.name);
 
     if (dentry->d_name.len >= USTAR_FILENAME_LENGTH){
-        pr_debug("ustar cannot lookup entry %s, name too long", dentry->d_name.name);
+        pr_debug("ustar cannot lookup entry %*s, name too long", dentry->d_name.len, dentry->d_name.name);
 		return ERR_PTR(-ENAMETOOLONG);
     }
 
-    inode_number =  ustar_find_inode_number_in_dir(dir, dentry->d_name.name);
+    inode_number =  ustar_find_inode_number_in_dir(dir, &dentry->d_name);
     if(inode_number == (ino_t)-1){
-        pr_debug("ustar cannot find inode number in dir nr %lu, named %s", dir->i_ino, dentry->d_name.name);
+        pr_debug("ustar cannot find inode number in dir nr %lu, named %*s", dir->i_ino, dentry->d_name.len, dentry->d_name.name);
         return ERR_PTR(-EIO);
     }
 
@@ -222,17 +224,20 @@ struct dentry* ustar_lookup(struct inode* dir, struct dentry* dentry, unsigned f
 		return ERR_PTR(PTR_ERR(inode));
 	}
 
+    pr_debug("found inode nr %lu with name %*s", inode->i_ino, dentry->d_name.len, dentry->d_name.name);
+
 	d_add(dentry, inode);   
     return NULL;
 }
 
-ino_t ustar_find_inode_number_in_dir(struct inode* dir, const char* name){
+ino_t ustar_find_inode_number_in_dir(struct inode* dir, struct qstr* name){
     struct super_block* sb = dir->i_sb;
     char fullname[USTAR_FILENAME_LENGTH];
     int fullname_index = 0, source_index = 0;
     struct ustar_disk_inode* disk_dir;
-    struct buffer_head* read_block = sb_bread(sb, dir->i_ino);
+    struct buffer_head* read_block;
 
+    read_block = sb_bread(sb, dir->i_ino);
     if(read_block == NULL){
         pr_err("ustar cannot read block nr. %lu. Inode not found.", dir->i_ino);
         return (ino_t)-1;
@@ -246,10 +251,16 @@ ino_t ustar_find_inode_number_in_dir(struct inode* dir, const char* name){
     }
 
     source_index = 0;
-    while(name[source_index] != '\0' ){
-        fullname[fullname_index] = name[source_index];
+    while(fullname_index < USTAR_FILENAME_LENGTH - 1 && source_index < name->len ){
+        fullname[fullname_index] = name->name[source_index];
         fullname_index++;
         source_index++;
+    }
+    fullname[fullname_index] = '\0';
+
+    if(source_index < name->len){
+        brelse(read_block);
+        return (ino_t)-1;
     }
 
     brelse(read_block);
@@ -265,6 +276,7 @@ ino_t ustar_inode_number_by_name(struct super_block* sb, const char* name){
         pr_debug("ustar name searching, read block number %llu", current_block_number);
         current_disk_inode = (struct ustar_disk_inode*)read_block->b_data;
 
+        pr_debug("ustar lookup, comparing %s with %s", current_disk_inode->name, name);
         if(strcmp(current_disk_inode->name, name) == 0){
             pr_debug("ustar found inode named %s in bloc nr %llu", name, current_block_number);
             return current_block_number;
