@@ -177,7 +177,7 @@ struct dentry* ustar_lookup(struct inode* dir, struct dentry* dentry, unsigned f
     pr_debug("ustar lookup dir nr %lu, for name %*s", dir->i_ino, dentry->d_name.len, dentry->d_name.name);
 
     if (dentry->d_name.len >= USTAR_FILENAME_LENGTH){
-        pr_debug("ustar cannot lookup entry %*s, name too long", dentry->d_name.len, dentry->d_name.name);
+        pr_err("ustar cannot lookup entry %*s, name too long", dentry->d_name.len, dentry->d_name.name);
 		return ERR_PTR(-ENAMETOOLONG);
     }
 
@@ -208,7 +208,7 @@ ino_t ustar_find_inode_number_in_dir(struct inode* dir, struct qstr* name){
     struct buffer_head* read_block;
 
     if (name->len >= USTAR_FILENAME_LENGTH){
-        pr_debug("ustar cannot lookup entry %*s, name too long", name->len, name->name);
+        pr_err("ustar cannot lookup entry %*s, name too long", name->len, name->name);
 		return (ino_t)-1;
     }
 
@@ -286,13 +286,13 @@ ssize_t ustar_read(struct file * filp, char __user * buf, size_t len, loff_t * p
 
     bh = sb_bread(sb, read_block_number);
     if(bh == NULL){
-        pr_debug("ustar_read cannot read block number %ld", read_block_number);
+        pr_err("ustar_read cannot read block number %ld", read_block_number);
         return -EIO;
     }
 
     if(copy_to_user(buf, bh->b_data + pos_in_block_offset, read_bytes_count)){
         brelse(bh);
-        pr_debug("ustar_read cannot copy to user buffer");
+        pr_err("ustar_read cannot copy to user buffer");
         return -EFAULT;
     }
 
