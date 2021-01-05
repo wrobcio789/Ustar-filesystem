@@ -195,7 +195,6 @@ struct dentry* ustar_lookup(struct inode* dir, struct dentry* dentry, unsigned f
 
     pr_debug("found inode nr %lu with name %*s", inode->i_ino, dentry->d_name.len, dentry->d_name.name);
 
-    //inode_init_owner(inode, dir, inode->i_mode);
 	d_add(dentry, inode);  
     return NULL;
 }
