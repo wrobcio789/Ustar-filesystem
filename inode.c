@@ -117,23 +117,8 @@ read_error:
     return ERR_PTR(-EIO);
 }
 
-/*struct inode* ustar_inode_alloc(struct super_block* super_block){
-    struct inode* inode;
-    void* data = kvmalloc(sizeof(struct inode) + sizeof(struct ustar_inode_data), GFP_KERNEL);
-    if(data == NULL){
-        pr_err("ustar could not allocate new inode\n");
-        return NULL;
-    }
-    inode = (struct inode*)data;
-    inode_init_once(inode);
-    inode->i_private = (struct ustar_inode_data*)(data + sizeof(struct inode));
-
-    pr_debug("ustar inode allocated");
-    return inode;
-}*/
 
 void ustar_destroy_inode(struct inode* inode){
-    //kvfree(inode);
     pr_debug("ustar inode nr %u destroyed", (unsigned int)inode->i_ino);
 }
 
