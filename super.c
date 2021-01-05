@@ -13,6 +13,7 @@ int ustar_fill_super_block(struct super_block* superblock, void* data, int silen
     sb_set_blocksize(superblock, USTAR_BLOCK_SIZE);
     superblock->s_maxbytes = USTAR_MAX_FILE_SIZE;
     superblock->s_op = &ustar_super_operations;
+    superblock->s_flags |= SB_RDONLY;
 
     root = ustar_inode_get(superblock, USTAR_ROOT_INODE_NUMBER);
     if(IS_ERR(root))
