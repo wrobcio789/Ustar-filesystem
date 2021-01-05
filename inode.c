@@ -2,6 +2,10 @@
 
 static uint32_t ustar_type_to_posix_mode_type_bits[8] = {[0] = S_IFREG, [5] = S_IFDIR};
 
+static struct file_operations ustar_file_operations = {
+    .read = ustar_read,
+};
+
 static struct file_operations ustar_dir_operations = {
     .owner = THIS_MODULE,
       //.iterate = ustar_iterate,
@@ -74,6 +78,10 @@ struct inode* ustar_inode_get(struct super_block* super_block, ino_t inode_numbe
     if(S_ISDIR(node->i_mode)){
         node->i_op = &ustar_dir_inode_operations;
         node->i_fop = &ustar_dir_operations;
+    }
+    else if(S_ISREG(node->i_mode)){
+        node->i_op = &ustar_dir_inode_operations;
+        node->i_fop = &ustar_file_operations;
     }
 
     brelse(read_block);
@@ -226,7 +234,7 @@ struct dentry* ustar_lookup(struct inode* dir, struct dentry* dentry, unsigned f
 
     inode_init_owner(inode, dir, inode->i_mode);
 	d_add(dentry, inode);   
-    return ERR_PTR(-ENOENT);
+    return NULL;
 }
 
 ino_t ustar_find_inode_number_in_dir(struct inode* dir, struct qstr* name){
@@ -331,4 +339,40 @@ ino_t ustar_inode_number_by_name(struct super_block* sb, const char* name){
 
     pr_debug("ustar did not find inode named %s\n", name);
     return (ino_t)-1;
+}
+
+ssize_t math_min(ssize_t a, ssize_t b){
+    return a < b ? a : b;
+}
+
+ssize_t ustar_read(struct file * filp, char __user * buf, size_t len, loff_t * ppos){
+    struct inode* inode = filp->f_inode;
+    struct super_block* sb = inode->i_sb;
+    struct buffer_head* bh;
+    size_t data_block_offset = *ppos / USTAR_BLOCK_SIZE;
+    size_t read_block_number = inode->i_ino + data_block_offset + 1;
+    ssize_t read_bytes_count = math_min(len, math_min((inode->i_size - data_block_offset * USTAR_BLOCK_SIZE), USTAR_BLOCK_SIZE));
+    ssize_t pos_in_block_offset = *ppos % USTAR_BLOCK_SIZE;
+
+    pr_debug("ustar_read from inode nr %lu, pos=%lld, user buffer size = %ld", filp->f_inode->i_ino, *ppos, len);
+    pr_debug("read_block_number = %ld, read_bytes_count = %ld\n", read_block_number, read_bytes_count);
+
+    if(inode->i_size == 0 || *ppos >= inode->i_size)
+        return 0;
+
+    bh = sb_bread(sb, read_block_number);
+    if(bh == NULL){
+        pr_debug("ustar_read cannot read block number %ld", read_block_number);
+        return -EIO;
+    }
+
+    if(copy_to_user(buf, bh->b_data + pos_in_block_offset, read_bytes_count)){
+        brelse(bh);
+        pr_debug("ustar_read cannot copy to user buffer");
+        return -EFAULT;
+    }
+
+    brelse(bh);
+    *ppos += read_bytes_count;
+    return read_bytes_count;
 }

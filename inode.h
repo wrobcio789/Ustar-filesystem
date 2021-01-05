@@ -52,4 +52,6 @@ ino_t ustar_inode_number_by_name(struct super_block* sb, const char* name);
 
 int ustar_direct_descendant_check(const char* ancestor, const char* descendant);
 
+ssize_t ustar_read(struct file * filp, char __user * buf, size_t len, loff_t * ppos);
+
 #endif //INODE_H
