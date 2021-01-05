@@ -30,8 +30,8 @@ void ustar_inode_fill(struct inode* node, struct ustar_disk_inode* disk_node){
     node->i_size = oct2bin(disk_node->size);
     node->i_blocks = ustar_calculate_size_in_blocks(node->i_size) + 1;
     node->i_atime.tv_sec = node->i_ctime.tv_sec = node-> i_mtime.tv_sec = oct2bin(disk_node->mtime);
-    i_uid_write(node, (uid_t)(oct2bin(disk_node->uid)));
     i_gid_write(node, (gid_t)(oct2bin(disk_node->gid)));
+    i_uid_write(node, (uid_t)(oct2bin(disk_node->uid)));
 
     pr_debug("ustar filled inode using data:\n"
             "name= %s,\n"
@@ -195,8 +195,8 @@ struct dentry* ustar_lookup(struct inode* dir, struct dentry* dentry, unsigned f
 
     pr_debug("found inode nr %lu with name %*s", inode->i_ino, dentry->d_name.len, dentry->d_name.name);
 
-    inode_init_owner(inode, dir, inode->i_mode);
-	d_add(dentry, inode);   
+    //inode_init_owner(inode, dir, inode->i_mode);
+	d_add(dentry, inode);  
     return NULL;
 }
 
