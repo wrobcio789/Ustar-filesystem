@@ -1,6 +1,7 @@
 .vscode
 .testdir
 image
+.cache.mk
 
 #build
 *.o

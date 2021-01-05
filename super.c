@@ -9,8 +9,9 @@ static struct super_operations ustar_super_operations = {
 int ustar_fill_super_block(struct super_block* superblock, void* data, int silent){
     struct inode *root;
 
-    superblock->s_magic = USTAR_MAGIC_NUMBER;
-    superblock->s_blocksize = USTAR_BLOCK_SIZE;
+    superblock->s_magic = USTAR_SUPERBLOCK_MAGIC_NUMBER;
+    sb_set_blocksize(superblock, USTAR_BLOCK_SIZE);
+    superblock->s_maxbytes = USTAR_MAX_FILE_SIZE;
     superblock->s_op = &ustar_super_operations;
 
     root = ustar_inode_get(superblock, USTAR_ROOT_INODE_NUMBER);
@@ -18,7 +19,7 @@ int ustar_fill_super_block(struct super_block* superblock, void* data, int silen
         return PTR_ERR(root);
 
     superblock->s_root = d_make_root(root);
-    if(!superblock->s_root){
+    if(superblock->s_root == NULL){
         pr_err("ustar root directory could not be created\n");
         return -ENOMEM;
     }

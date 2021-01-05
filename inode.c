@@ -4,8 +4,6 @@ static uint32_t ustar_type_to_posix_mode_type_bits[8] = {[0] = S_IFREG, [5] = S_
 
 static struct file_operations ustar_dir_operations = {
     .owner = THIS_MODULE,
-    .llseek = generic_file_llseek,
-    .read = generic_read_dir,
       //.iterate = ustar_iterate,
 };
 
@@ -226,6 +224,7 @@ struct dentry* ustar_lookup(struct inode* dir, struct dentry* dentry, unsigned f
 
     pr_debug("found inode nr %lu with name %*s", inode->i_ino, dentry->d_name.len, dentry->d_name.name);
 
+    inode_init_owner(inode, dir, inode->i_mode);
 	d_add(dentry, inode);   
     return NULL;
 }
@@ -236,6 +235,11 @@ ino_t ustar_find_inode_number_in_dir(struct inode* dir, struct qstr* name){
     int fullname_index = 0, source_index = 0;
     struct ustar_disk_inode* disk_dir;
     struct buffer_head* read_block;
+
+    if (name->len >= USTAR_FILENAME_LENGTH){
+        pr_debug("ustar cannot lookup entry %*s, name too long", name->len, name->name);
+		return (ino_t)-1;
+    }
 
     read_block = sb_bread(sb, dir->i_ino);
     if(read_block == NULL){
@@ -257,6 +261,8 @@ ino_t ustar_find_inode_number_in_dir(struct inode* dir, struct qstr* name){
         source_index++;
     }
     fullname[fullname_index] = '\0';
+    pr_debug("ustar_find_inode_number_in_dir copied whole text from dir inode: %s", fullname);
+
 
     if(source_index < name->len){
         brelse(read_block);
@@ -267,18 +273,62 @@ ino_t ustar_find_inode_number_in_dir(struct inode* dir, struct qstr* name){
     return ustar_inode_number_by_name(sb, fullname);    
 }
 
+bool ustar_areStringTheSame(const char* a, const char* b){
+    int index = 0;
+
+    pr_debug("ustar_areStringTheSame( %s, %s )\n",a,b);
+    do{
+        if(a[index] != b[index]){
+            pr_debug("ustar_areStringTheSame: false, difference at %d\n",index);
+            return false;
+        }
+    }while(a[index] != '\0' && b[index++] != '\0');  
+
+    pr_debug("ustar_areStringTheSame: true, difference at %d\n",index);
+    return true;
+}
+
+bool startsWith(const char* string, const char* prefix){
+    while(*prefix != '\0'){
+        if(*prefix != *string)
+            return false;
+        prefix++;
+        string++;
+    }
+    return true;
+}
+
+struct buffer_head* read_present_block(struct super_block* sb, sector_t block_number){
+    struct buffer_head* read_block = sb_bread(sb, block_number);
+    struct ustar_disk_inode* disk_inode = (struct ustar_disk_inode*)(read_block->b_data);
+
+    if(read_block == NULL)
+        return NULL;
+
+    if(!startsWith(disk_inode->magic, USTAR_INODE_MAGIC)){
+        brelse(read_block);
+        return NULL;
+    }
+
+    return read_block;
+}
+
 ino_t ustar_inode_number_by_name(struct super_block* sb, const char* name){
     loff_t current_block_number = 0;
     struct ustar_disk_inode* current_disk_inode;
     struct buffer_head* read_block;
 
-    while((read_block = sb_bread(sb, current_block_number))){
-        pr_debug("ustar name searching, read block number %llu", current_block_number);
+    while((read_block = read_present_block(sb, current_block_number))){
+        pr_debug("ustar name searching, read block number %llu\n", current_block_number);
+        pr_debug("ustar_inode_number_by_name is read_block address %p\n", (void*)read_block);
+        pr_debug("ustar_inode_number_by_name IS_ERR %d\n", IS_ERR(read_block));
+        pr_debug("ustar_inode_number_by_name read_block data at %p with size %lu\n", (void*)read_block->b_data, read_block->b_size);
         current_disk_inode = (struct ustar_disk_inode*)read_block->b_data;
 
-        pr_debug("ustar lookup, comparing %s with %s", current_disk_inode->name, name);
-        if(strcmp(current_disk_inode->name, name) == 0){
-            pr_debug("ustar found inode named %s in bloc nr %llu", name, current_block_number);
+        pr_debug("ustar lookup, comparing %s with %s\n", current_disk_inode->name, name);
+        if(ustar_areStringTheSame(current_disk_inode->name, name)){
+            pr_debug("ustar found inode named %s in bloc nr %llu\n", name, current_block_number);
+            brelse(read_block);
             return current_block_number;
         }
         
@@ -286,6 +336,6 @@ ino_t ustar_inode_number_by_name(struct super_block* sb, const char* name){
         brelse(read_block);
     }
 
-    pr_debug("ustar did not find inode named %s", name);
+    pr_debug("ustar did not find inode named %s\n", name);
     return (ino_t)-1;
 }
