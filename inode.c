@@ -8,7 +8,7 @@ static struct file_operations ustar_file_operations = {
 
 static struct file_operations ustar_dir_operations = {
     .owner = THIS_MODULE,
-      //.iterate = ustar_iterate,
+    .iterate = ustar_iterate,
 };
 
 static struct inode_operations ustar_dir_inode_operations = {
@@ -122,37 +122,57 @@ void ustar_destroy_inode(struct inode* inode){
     pr_debug("ustar inode nr %u destroyed", (unsigned int)inode->i_ino);
 }
 
+void ustar_extract_filename(char* fullpath, char* filename){
+    char* furthest_slash_position = NULL;
+
+    while(*fullpath != '\0'){
+        if(*fullpath == '/' && *(fullpath + 1) != '\0')
+            furthest_slash_position = fullpath;
+        fullpath++;
+    }
+
+    furthest_slash_position++;
+    while(*furthest_slash_position!='\0' && *furthest_slash_position != '/'){
+        *filename  = *furthest_slash_position;
+        filename++;
+        furthest_slash_position++;
+    }
+    *filename = '\0';
+}
+
 int ustar_iterate(struct file* fileptr, struct dir_context* dir_ctx){
-    uint32_t current_block_number = 0;
+    uint32_t current_block_number = dir_ctx->pos;
     uint32_t record_count = 0;
     struct buffer_head* read_block;
     struct ustar_disk_inode* current_disk_inode;
-    struct inode* inode;
-    struct super_block* sb;
+    struct inode* inode = fileptr->f_inode;
+    struct super_block* sb = inode->i_sb;
     char ancestor_filename[USTAR_FILENAME_LENGTH];
+    char new_filename[USTAR_FILENAME_LENGTH];
 
-    pr_debug("ustar iterate from pos %llu through dir named %s\n", dir_ctx->pos, fileptr->f_path.dentry->d_name.name);
-
-    inode = fileptr->f_inode;
-	sb = inode->i_sb;
+    pr_debug("ustar_iterate from pos %llu through dir named %s\n", dir_ctx->pos, fileptr->f_path.dentry->d_name.name);
 
     read_block = sb_bread(sb, inode->i_ino);
     current_disk_inode = (struct ustar_disk_inode*)(read_block->b_data);
     strcpy(ancestor_filename, current_disk_inode->name);
     brelse(read_block);
 
-    pr_debug("ustar iterating, ancestor filename: %s", ancestor_filename);
+    pr_debug("ustar_iterate, ancestor filename: %s", ancestor_filename);
 
     while((read_block = sb_bread(sb, current_block_number))){
-        pr_debug("ustar iterating, read block number %u", current_block_number);
+        pr_debug("ustar_iterate, read block number %u", current_block_number);
         current_disk_inode = (struct ustar_disk_inode*)read_block->b_data;
         current_block_number += 1 + ustar_calculate_size_in_blocks(oct2bin(current_disk_inode->size));
+        dir_ctx->pos = current_block_number;
 
         if(ustar_direct_descendant_check(ancestor_filename, current_disk_inode->name)){
-            pr_debug("ustar iterating, found child inode with filename %s",current_disk_inode->name);
+            pr_debug("ustar_iterate, found child inode with filename %s",current_disk_inode->name);
 
             record_count++;
-            if(dir_emit(dir_ctx, current_disk_inode->name, strlen(current_disk_inode->name), current_block_number, DT_UNKNOWN) == 0){
+
+            ustar_extract_filename(current_disk_inode->name, new_filename);
+            pr_debug("ustar_iterate from %s extracted filename %s", current_disk_inode->name, new_filename);
+            if(dir_emit(dir_ctx, new_filename, strlen(new_filename), current_block_number, DT_UNKNOWN) == 0){
                 brelse(read_block);
                 return record_count;
             }
@@ -162,7 +182,7 @@ int ustar_iterate(struct file* fileptr, struct dir_context* dir_ctx){
     }
 
 
-    pr_debug("ustar iterating, found %d matching records", record_count);
+    pr_debug("ustar_iterate, found %d matching records", record_count);
     return record_count;
 }
 
