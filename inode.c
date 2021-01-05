@@ -19,6 +19,10 @@ uint32_t ustar_calculate_size_in_blocks(loff_t size){
     return (size + USTAR_BLOCK_SIZE - 1)/USTAR_BLOCK_SIZE;
 }
 
+ssize_t math_min(ssize_t a, ssize_t b){
+    return a < b ? a : b;
+}
+
 void ustar_inode_fill(struct inode* node, struct ustar_disk_inode* disk_node){
     uint32_t mode_type_bits = ustar_type_to_posix_mode_type_bits[disk_node->typeflag - '0'];
 
@@ -113,31 +117,12 @@ struct inode* ustar_inode_get(struct super_block* super_block, ino_t inode_numbe
 read_error:
     pr_err("ustar cannot read inode number %d\n", (unsigned int)inode_number);
     iget_failed(node);
-
     return ERR_PTR(-EIO);
 }
 
 
 void ustar_destroy_inode(struct inode* inode){
     pr_debug("ustar inode nr %u destroyed", (unsigned int)inode->i_ino);
-}
-
-void ustar_extract_filename(char* fullpath, char* filename){
-    char* furthest_slash_position = NULL;
-
-    while(*fullpath != '\0'){
-        if(*fullpath == '/' && *(fullpath + 1) != '\0')
-            furthest_slash_position = fullpath;
-        fullpath++;
-    }
-
-    furthest_slash_position++;
-    while(*furthest_slash_position!='\0' && *furthest_slash_position != '/'){
-        *filename  = *furthest_slash_position;
-        filename++;
-        furthest_slash_position++;
-    }
-    *filename = '\0';
 }
 
 int ustar_iterate(struct file* fileptr, struct dir_context* dir_ctx){
@@ -159,13 +144,13 @@ int ustar_iterate(struct file* fileptr, struct dir_context* dir_ctx){
 
     pr_debug("ustar_iterate, ancestor filename: %s", ancestor_filename);
 
-    while((read_block = sb_bread(sb, current_block_number))){
+    while((read_block = ustar_read_present_block(sb, current_block_number))){
         pr_debug("ustar_iterate, read block number %u", current_block_number);
         current_disk_inode = (struct ustar_disk_inode*)read_block->b_data;
         current_block_number += 1 + ustar_calculate_size_in_blocks(oct2bin(current_disk_inode->size));
         dir_ctx->pos = current_block_number;
 
-        if(ustar_direct_descendant_check(ancestor_filename, current_disk_inode->name)){
+        if(ustar_is_direct_descendant(ancestor_filename, current_disk_inode->name)){
             pr_debug("ustar_iterate, found child inode with filename %s",current_disk_inode->name);
 
             record_count++;
@@ -181,35 +166,8 @@ int ustar_iterate(struct file* fileptr, struct dir_context* dir_ctx){
         brelse(read_block);
     }
 
-
     pr_debug("ustar_iterate, found %d matching records", record_count);
     return record_count;
-}
-
-int ustar_direct_descendant_check(const char* ancestor, const char* descendant){
-    pr_debug("checking if %s is ancestor of %s", ancestor, descendant);
-
-    while(*ancestor != '\0'){
-        if(*ancestor != *descendant)
-            return false;
-        ancestor++;
-        descendant++;
-    }
-
-    if(*descendant == '\0') //descendant == ancestor
-        return false;  
-
-    while(*descendant != '\0'){
-        if(*descendant == '/'){
-            if(*(descendant + 1) == '\0')   { //descendant is directory
-                return true;
-            }
-            else
-                return false; //descendant is not direct
-        } 
-        descendant++;
-    }
-    return true;
 }
 
 struct dentry* ustar_lookup(struct inode* dir, struct dentry* dentry, unsigned flags){
@@ -286,53 +244,17 @@ ino_t ustar_find_inode_number_in_dir(struct inode* dir, struct qstr* name){
     return ustar_inode_number_by_name(sb, fullname);    
 }
 
-bool ustar_areTheSamePath(const char* a, const char* b){
-    while(*a != '\0' && *b != '\0'){
-        if(*a != *b){
-            return false;
-        }
-        a++; b++;
-    }
-
-    return *a == *b || (*a == '/' && *(a+1) == '\0' && *b == '\0') || (*b == '/' && *(b+1) == '\0' && *a == '\0');
-}
-
-bool startsWith(const char* string, const char* prefix){
-    while(*prefix != '\0'){
-        if(*prefix != *string)
-            return false;
-        prefix++;
-        string++;
-    }
-    return true;
-}
-
-struct buffer_head* read_present_block(struct super_block* sb, sector_t block_number){
-    struct buffer_head* read_block = sb_bread(sb, block_number);
-    struct ustar_disk_inode* disk_inode = (struct ustar_disk_inode*)(read_block->b_data);
-
-    if(read_block == NULL)
-        return NULL;
-
-    if(!startsWith(disk_inode->magic, USTAR_INODE_MAGIC)){
-        brelse(read_block);
-        return NULL;
-    }
-
-    return read_block;
-}
-
 ino_t ustar_inode_number_by_name(struct super_block* sb, const char* name){
     loff_t current_block_number = 0;
     struct ustar_disk_inode* current_disk_inode;
     struct buffer_head* read_block;
 
-    while((read_block = read_present_block(sb, current_block_number))){
+    while((read_block = ustar_read_present_block(sb, current_block_number))){
         pr_debug("ustar name searching, read block number %llu\n", current_block_number);
         current_disk_inode = (struct ustar_disk_inode*)read_block->b_data;
 
         pr_debug("ustar lookup, comparing %s with %s\n", current_disk_inode->name, name);
-        if(ustar_areTheSamePath(current_disk_inode->name, name)){
+        if(ustar_are_paths_equal(current_disk_inode->name, name)){
             pr_debug("ustar found inode named %s in bloc nr %llu\n", name, current_block_number);
             brelse(read_block);
             return current_block_number;
@@ -346,9 +268,6 @@ ino_t ustar_inode_number_by_name(struct super_block* sb, const char* name){
     return (ino_t)-1;
 }
 
-ssize_t math_min(ssize_t a, ssize_t b){
-    return a < b ? a : b;
-}
 
 ssize_t ustar_read(struct file * filp, char __user * buf, size_t len, loff_t * ppos){
     struct inode* inode = filp->f_inode;
@@ -380,4 +299,84 @@ ssize_t ustar_read(struct file * filp, char __user * buf, size_t len, loff_t * p
     brelse(bh);
     *ppos += read_bytes_count;
     return read_bytes_count;
+}
+
+struct buffer_head* ustar_read_present_block(struct super_block* sb, sector_t block_number){
+    struct buffer_head* read_block = sb_bread(sb, block_number);
+    struct ustar_disk_inode* disk_inode = (struct ustar_disk_inode*)(read_block->b_data);
+
+    if(read_block == NULL)
+        return NULL;
+
+    if(!string_starts_with(disk_inode->magic, USTAR_INODE_MAGIC)){
+        brelse(read_block);
+        return NULL;
+    }
+
+    return read_block;
+}
+
+bool ustar_are_paths_equal(const char* a, const char* b){
+    while(*a != '\0' && *b != '\0'){
+        if(*a != *b){
+            return false;
+        }
+        a++; b++;
+    }
+
+    return *a == *b || (*a == '/' && *(a+1) == '\0' && *b == '\0') || (*b == '/' && *(b+1) == '\0' && *a == '\0');
+}
+
+bool string_starts_with(const char* string, const char* prefix){
+    while(*prefix != '\0'){
+        if(*prefix != *string)
+            return false;
+        prefix++;
+        string++;
+    }
+    return true;
+}
+
+void ustar_extract_filename(char* fullpath, char* filename){
+    char* furthest_slash_position = NULL;
+
+    while(*fullpath != '\0'){
+        if(*fullpath == '/' && *(fullpath + 1) != '\0')
+            furthest_slash_position = fullpath;
+        fullpath++;
+    }
+
+    furthest_slash_position++;
+    while(*furthest_slash_position!='\0' && *furthest_slash_position != '/'){
+        *filename  = *furthest_slash_position;
+        filename++;
+        furthest_slash_position++;
+    }
+    *filename = '\0';
+}
+
+int ustar_is_direct_descendant(const char* ancestor, const char* descendant){
+    pr_debug("checking if %s is ancestor of %s", ancestor, descendant);
+
+    while(*ancestor != '\0'){
+        if(*ancestor != *descendant)
+            return false;
+        ancestor++;
+        descendant++;
+    }
+
+    if(*descendant == '\0') //descendant == ancestor
+        return false;  
+
+    while(*descendant != '\0'){
+        if(*descendant == '/'){
+            if(*(descendant + 1) == '\0')   { //descendant is directory
+                return true;
+            }
+            else
+                return false; //descendant is not direct
+        } 
+        descendant++;
+    }
+    return true;
 }
